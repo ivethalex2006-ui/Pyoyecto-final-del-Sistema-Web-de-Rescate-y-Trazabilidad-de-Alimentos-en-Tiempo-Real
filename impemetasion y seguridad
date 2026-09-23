@@ -1,0 +1,93 @@
+export enum Rol {
+	ADMIN = "ADMIN",
+	DONANTE = "DONANTE",
+	BENEFICIARIO = "BENEFICIARIO",
+	VOLUNTARIO = "VOLUNTARIO",
+}
+
+export enum EstadoUsuario {
+	ACTIVO = "ACTIVO",
+	INACTIVO = "INACTIVO",
+	BLOQUEADO = "BLOQUEADO",
+}
+
+export interface Usuario {
+	id: string;
+	nombre: string;
+	correo: string;
+	passwordHash: string;
+	rol: Rol;
+	estado: EstadoUsuario;
+	creadoEn: Date;
+	actualizadoEn: Date;
+}
+
+export interface Donante {
+	id: string;
+	usuarioId: string;
+	telefono?: string;
+	direccion?: string;
+	tipoDonante: "PERSONA" | "EMPRESA" | "ORGANIZACION";
+	documento?: string;
+	verificado: boolean;
+	creadoEn: Date;
+}
+
+export interface RegistroDonanteInput {
+	nombre: string;
+	correo: string;
+	password: string;
+	telefono?: string;
+	direccion?: string;
+	tipoDonante: Donante["tipoDonante"];
+	documento?: string;
+}
+
+export interface LoginInput {
+	correo: string;
+	password: string;
+}
+
+export interface JwtPayload {
+	sub: string;
+	correo: string;
+	rol: Rol;
+	iat?: number;
+	exp?: number;
+}
+
+export interface AuthResponse {
+	accessToken: string;
+	refreshToken?: string;
+	usuario: Omit<Usuario, "passwordHash">;
+}
+
+export interface ApiError {
+	mensaje: string;
+	codigo: string;
+	detalles?: Record<string, string>;
+}
+
+/** Campos mínimos recomendados para persistencia. */
+export const modelos = {
+	Usuario: [
+		"id (UUID, PK)",
+		"nombre (VARCHAR NOT NULL)",
+		"correo (VARCHAR UNIQUE NOT NULL)",
+		"passwordHash (VARCHAR NOT NULL)",
+		"rol (ENUM Rol NOT NULL DEFAULT DONANTE)",
+		"estado (ENUM EstadoUsuario NOT NULL DEFAULT ACTIVO)",
+		"creadoEn",
+		"actualizadoEn",
+	],
+	Donante: [
+		"id (UUID, PK)",
+		"usuarioId (UUID, FK Usuario.id UNIQUE)",
+		"telefono",
+		"direccion",
+		"tipoDonante",
+		"documento",
+		"verificado (BOOLEAN DEFAULT false)",
+		"creadoEn",
+	],
+} as const;
