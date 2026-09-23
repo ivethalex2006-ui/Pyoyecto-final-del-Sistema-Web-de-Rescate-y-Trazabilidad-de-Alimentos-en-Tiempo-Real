@@ -1,0 +1,77 @@
+"""Pruebas unitarias del sistema de rescate y trazabilidad de alimentos.
+
+Ejecución:
+	pytest "Pruebas Unitarias" --cov=. --cov-report=term-missing --cov-fail-under=80
+"""
+
+from datetime import date
+
+import pytest
+
+
+def validar_alimento(nombre, cantidad, vencimiento):
+	"""Valida los datos mínimos para registrar un alimento."""
+	if not nombre or not isinstance(nombre, str):
+		raise ValueError("El nombre es obligatorio")
+	if not isinstance(cantidad, int) or cantidad <= 0:
+		raise ValueError("La cantidad debe ser mayor que cero")
+	if vencimiento < date.today():
+		raise ValueError("El alimento está vencido")
+	return {"nombre": nombre, "cantidad": cantidad, "vencimiento": vencimiento}
+
+
+def rescatar(alimento, cantidad):
+	"""Descuenta existencias cuando el rescate es posible."""
+	if cantidad <= 0:
+		raise ValueError("La cantidad debe ser mayor que cero")
+	if cantidad > alimento["cantidad"]:
+		raise ValueError("Stock insuficiente")
+	alimento["cantidad"] -= cantidad
+	return alimento
+
+
+def registrar_evento(historial, tipo, alimento_id):
+	historial.append({"tipo": tipo, "alimento_id": alimento_id})
+	return historial
+
+
+def test_registra_alimento_valido():
+	alimento = validar_alimento("Pan", 10, date(2099, 12, 31))
+	assert alimento == {
+		"nombre": "Pan",
+		"cantidad": 10,
+		"vencimiento": date(2099, 12, 31),
+	}
+
+
+@pytest.mark.parametrize(
+	"nombre,cantidad",
+	[("", 1), (None, 1), ("Pan", 0), ("Pan", -1), ("Pan", "10")],
+)
+def test_rechaza_datos_invalidos(nombre, cantidad):
+	with pytest.raises(ValueError):
+		validar_alimento(nombre, cantidad, date(2099, 12, 31))
+
+
+def test_rechaza_alimento_vencido():
+	with pytest.raises(ValueError, match="vencido"):
+		validar_alimento("Leche", 2, date(2000, 1, 1))
+
+
+def test_rescate_reduce_el_stock():
+	alimento = {"nombre": "Fruta", "cantidad": 8}
+	assert rescatar(alimento, 3)["cantidad"] == 5
+
+
+@pytest.mark.parametrize("cantidad", [0, -2, 9])
+def test_rescate_invalido_no_modifica_stock(cantidad):
+	alimento = {"nombre": "Fruta", "cantidad": 8}
+	with pytest.raises(ValueError):
+		rescatar(alimento, cantidad)
+	assert alimento["cantidad"] == 8
+
+
+def test_registra_trazabilidad():
+	historial = registrar_evento([], "donacion", 4)
+	historial = registrar_evento(historial, "rescate", 4)
+	assert [evento["tipo"] for evento in historial] == ["donacion", "rescate"]
