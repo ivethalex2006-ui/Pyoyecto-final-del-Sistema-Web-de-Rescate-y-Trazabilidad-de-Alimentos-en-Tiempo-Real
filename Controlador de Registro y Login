@@ -1,0 +1,80 @@
+import { randomUUID, createHmac } from "crypto";
+import { Request, Response } from "express";
+import bcrypt from "bcryptjs";
+
+interface Usuario {
+    id: string;
+    nombre: string;
+    correo: string;
+    password: string;
+}
+
+const usuarios: Usuario[] = [];
+const JWT_SECRET = process.env.JWT_SECRET ?? "cambia-esta-clave-en-produccion";
+
+const generarToken = (payload: Record<string, string>): string => {
+    const codificar = (valor: unknown): string =>
+        Buffer.from(JSON.stringify(valor)).toString("base64url");
+    const encabezado = codificar({ alg: "HS256", typ: "JWT" });
+    const cuerpo = codificar({
+        ...payload,
+        iat: Math.floor(Date.now() / 1000),
+        exp: Math.floor(Date.now() / 1000) + 8 * 60 * 60,
+    });
+    const datos = `${encabezado}.${cuerpo}`;
+    const firma = createHmac("sha256", JWT_SECRET)
+        .update(datos)
+        .digest("base64url");
+
+    return `${datos}.${firma}`;
+};
+
+export class ControladorRegistroLogin {
+    static async registrar(req: Request, res: Response): Promise<void> {
+        const { nombre, correo, password } = req.body as Partial<Usuario>;
+
+        if (!nombre || !correo || !password) {
+            res.status(400).json({ mensaje: "Nombre, correo y contraseña son obligatorios" });
+            return;
+        }
+
+        const correoNormalizado = correo.trim().toLowerCase();
+        if (usuarios.some((usuario) => usuario.correo === correoNormalizado)) {
+            res.status(409).json({ mensaje: "El correo ya está registrado" });
+            return;
+        }
+
+        const usuario: Usuario = {
+            id: randomUUID(),
+            nombre: nombre.trim(),
+            correo: correoNormalizado,
+            password: await bcrypt.hash(password, 12),
+        };
+
+        usuarios.push(usuario);
+        res.status(201).json({
+            mensaje: "Usuario registrado correctamente",
+            usuario: { id: usuario.id, nombre: usuario.nombre, correo: usuario.correo },
+        });
+    }
+
+    static async iniciarSesion(req: Request, res: Response): Promise<void> {
+        const { correo, password } = req.body as Partial<Usuario>;
+        const usuario = usuarios.find(
+            (item) => item.correo === correo?.trim().toLowerCase()
+        );
+
+        if (!usuario || !password || !(await bcrypt.compare(password, usuario.password))) {
+            res.status(401).json({ mensaje: "Correo o contraseña incorrectos" });
+            return;
+        }
+
+        const token = generarToken({ id: usuario.id, correo: usuario.correo });
+
+        res.json({
+            mensaje: "Inicio de sesión exitoso",
+            token,
+            usuario: { id: usuario.id, nombre: usuario.nombre, correo: usuario.correo },
+        });
+    }
+}
