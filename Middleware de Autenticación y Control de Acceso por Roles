@@ -1,0 +1,38 @@
+const jwt = require('jsonwebtoken');
+
+/**
+ * Verifica el token Bearer y agrega el usuario autenticado a req.user.
+ */
+function authenticateToken(req, res, next) {
+	const header = req.headers.authorization;
+	const token = header && header.startsWith('Bearer ')
+		? header.slice(7)
+		: null;
+
+	if (!token) {
+		return res.status(401).json({ error: 'Token de autenticación requerido' });
+	}
+
+	try {
+		req.user = jwt.verify(token, process.env.JWT_SECRET);
+		return next();
+	} catch {
+		return res.status(403).json({ error: 'Token inválido o expirado' });
+	}
+}
+
+/**
+ * Restringe el acceso a uno o varios roles.
+ * Uso: router.get('/ruta', authenticateToken, authorizeRoles('admin'), handler)
+ */
+function authorizeRoles(...allowedRoles) {
+	return (req, res, next) => {
+		if (!req.user || !allowedRoles.includes(req.user.role)) {
+			return res.status(403).json({ error: 'No tienes permisos para acceder a este recurso' });
+		}
+
+		return next();
+	};
+}
+
+module.exports = { authenticateToken, authorizeRoles };
