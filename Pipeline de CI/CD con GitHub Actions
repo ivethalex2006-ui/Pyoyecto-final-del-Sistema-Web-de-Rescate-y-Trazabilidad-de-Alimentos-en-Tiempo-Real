@@ -1,0 +1,71 @@
+name: CI/CD - Entorno de prueba
+
+on:
+	push:
+		branches: [main, master]
+	pull_request:
+		branches: [main, master]
+
+permissions:
+	contents: read
+
+jobs:
+	test:
+		name: Pruebas y validaciones
+		runs-on: ubuntu-latest
+		steps:
+			- name: Obtener código
+				uses: actions/checkout@v4
+
+			- name: Configurar Node.js
+				uses: actions/setup-node@v4
+				with:
+					node-version: 20
+					cache: npm
+
+			- name: Instalar dependencias
+				run: npm ci
+
+			- name: Verificar formato y lint
+				run: npm run lint --if-present
+
+			- name: Ejecutar pruebas
+				run: npm test --if-present -- --ci
+
+			- name: Generar aplicación
+				run: npm run build --if-present
+
+	deploy-test:
+		name: Desplegar en pruebas
+		needs: test
+		if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+		runs-on: ubuntu-latest
+		environment:
+			name: testing
+			url: ${{ steps.deploy.outputs.url }}
+		steps:
+			- name: Obtener código
+				uses: actions/checkout@v4
+
+			- name: Desplegar por SSH
+				id: deploy
+				env:
+					DEPLOY_HOST: ${{ secrets.TEST_SERVER_HOST }}
+					DEPLOY_USER: ${{ secrets.TEST_SERVER_USER }}
+					DEPLOY_KEY: ${{ secrets.TEST_SERVER_SSH_KEY }}
+					APP_PATH: ${{ secrets.TEST_SERVER_APP_PATH }}
+					TEST_URL: ${{ vars.TEST_URL }}
+				run: |
+					test -n "$DEPLOY_HOST" && test -n "$DEPLOY_USER" && test -n "$DEPLOY_KEY" && test -n "$APP_PATH"
+					install -m 700 -d ~/.ssh
+					printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/deploy_key
+					chmod 600 ~/.ssh/deploy_key
+					ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
+					ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" \
+						"cd '$APP_PATH' && git pull --ff-only origin main && npm ci --omit=dev && npm run build --if-present && sudo systemctl restart rescate-trazabilidad"
+					echo "url=${TEST_URL:-http://$DEPLOY_HOST}" >> "$GITHUB_OUTPUT"
+
+			- name: Comprobar disponibilidad
+				env:
+					TEST_URL: ${{ steps.deploy.outputs.url }}
+				run: curl --fail --retry 5 --retry-delay 5 "$TEST_URL"
